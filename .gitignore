@@ -1,0 +1,4 @@
+*.[ao]
+arduino-code/build/*
+output/
+target/

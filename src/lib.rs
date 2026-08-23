@@ -199,6 +199,8 @@ unsafe fn shaped_ttf_demo() {
 /// This function should be safe, and is unsafe only due to externed C functions
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_setup() {
+    println!("meow");
+
     // initGrayMode();
     fillScreen(WHITE);
     // Circle::new(Point::new(22, 22), 20).into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 20)).draw(&mut DISPLAY);
