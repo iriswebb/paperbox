@@ -1,0 +1,4 @@
+[toolchain]
+components = ["rust-src"]
+profile = "minimal"
+channel = "esp"
