@@ -8,19 +8,17 @@
 
 use alloc::string::String;
 use alloc::sync::Arc;
-use core::alloc::GlobalAlloc;
-use core::sync::atomic::{AtomicUsize, Ordering};
 use core_maths::CoreFloat;
-use embedded_graphics::pixelcolor::{Gray4, Rgb888};
+use embedded_graphics::pixelcolor::Rgb888;
 use embedded_graphics::prelude::*;
 use parley::fontique::{Blob, FontInfoOverride};
 use parley::layout::{Alignment, Glyph, GlyphRun, Layout, PositionedLayoutItem};
 use parley::style::{FontFamily, StyleProperty};
 use parley::{AlignmentOptions, FontContext, LayoutContext, LineHeight};
+use swash::FontRef;
 use swash::scale::image::Content;
 use swash::scale::{Render, ScaleContext, Scaler, Source, StrikeWith};
 use swash::zeno;
-use swash::FontRef;
 use zeno::{Format, Vector};
 
 fn alpha_composite(background: Rgb888, foreground: Rgb888, alpha: u8) -> Rgb888 {
@@ -56,10 +54,8 @@ trait ParleyEngine:
 }
 
 impl<
-        T: DrawTarget<
-            Color: From<Rgb888> + Clone + PartialEq + Default + core::fmt::Debug + Into<Rgb888>,
-        >,
-    > ParleyEngine for T
+    T: DrawTarget<Color: From<Rgb888> + Clone + PartialEq + Default + core::fmt::Debug + Into<Rgb888>>,
+> ParleyEngine for T
 {
 }
 

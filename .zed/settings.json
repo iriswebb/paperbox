@@ -8,7 +8,7 @@
     "rust-analyzer": {
       "initialization_options": {
         "cargo": {
-          "target": "xtensa-esp32s3-espidf",
+          "target": "xtensa-esp32s3-none-elf",
           "allTargets": false,
         },
       },

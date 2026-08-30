@@ -4,7 +4,7 @@ use embedded_graphics::{
     pixelcolor::Rgb888,
     prelude::*,
     primitives::{PrimitiveStyleBuilder, Rectangle},
-    text::{self, Text},
+    text::Text,
 };
 
 #[derive(Clone)]
@@ -83,7 +83,7 @@ pub trait ContentDisplayDriver {
         h: u32,
     ) -> Result<(), Self::Error>;
     fn render_image(&mut self, t: Image, x: u32, y: u32, w: u32, h: u32)
-        -> Result<(), Self::Error>;
+    -> Result<(), Self::Error>;
 
     fn render(
         &mut self,

@@ -1,9 +1,14 @@
-[build]
-target = "xtensa-esp32s3-espidf"
+[target.xtensa-esp32s3-none-elf]
+runner = "espflash flash --monitor --chip esp32s3"
 
-[target.xtensa-esp32s3-espidf]
-ar = "xtensa-esp32s3-elf-ar"
-linker = "ldproxy"
+[env]
+
+[build]
+rustflags = [
+  "-C", "link-arg=-nostartfiles",
+]
+
+target = "xtensa-esp32s3-none-elf"
 
 [unstable]
-build-std = ["panic_abort", "core", "alloc", "std"]
+build-std = ["alloc", "core"]

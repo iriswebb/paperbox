@@ -1,0 +1,20 @@
+[package]
+name = "demos"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+embedded-hal = "1.0.0"
+embedded-graphics = "0.8.2"
+log = "0.4"
+xiao-epaper = {path = "../driver"}
+zlib-rs = { version = "0.6.3", default-features = false, features = ["c-allocator"] }
+eg-seven-segment = "0.2.0"
+femtofont = "0.5.0"
+eg-femtofont = "0.1.0"
+ttf-parser = { version = "0.25.1", default-features = false, features = [
+    "opentype-layout", "no-std-float", "variable-fonts"
+]}
+parley = {default-features = false, version = "0.11.1", features=["libm"]}
+swash = {default-features = false, version = "0.2.10", features=["libm", "scale", "render"]}
+core_maths = "0.1.1"
