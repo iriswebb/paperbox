@@ -19,6 +19,7 @@ ttf-parser = { version = "0.25.1", default-features = false, features = [
 log = "0.4"
 parley = {default-features = false, version = "0.11.1", features=["libm"]}
 swash = {default-features = false, version = "0.2.10", features=["libm", "scale", "render"]}
+core_maths = "0.1.1"
 
 
 # Configure the build for minimal size - AVRs have very little program memory

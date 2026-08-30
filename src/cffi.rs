@@ -1,5 +1,6 @@
 // The Display Code
-use crate::{drawPixel, BLACK, WHITE};
+use crate::{cffi, drawPixel, free, malloc, BLACK, WHITE};
+use core::alloc::GlobalAlloc;
 use embedded_graphics::{
     pixelcolor::{self, BinaryColor, Gray4},
     prelude::*,
@@ -7,6 +8,18 @@ use embedded_graphics::{
 
 pub struct Display;
 pub struct FourGrayDisplay;
+
+pub struct cffialloc;
+
+unsafe impl GlobalAlloc for cffialloc {
+    unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
+        malloc(layout.size())
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
+        free(ptr);
+    }
+}
 
 impl OriginDimensions for Display {
     fn size(&self) -> Size {

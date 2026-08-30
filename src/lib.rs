@@ -1,10 +1,13 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 #![feature(core_float_math)]
+// #![no_std]
 
 use core::ffi;
 
 extern crate alloc;
+use alloc::string::String;
+use core_maths::CoreFloat;
 
 use alloc::{ffi::CString, string::ToString};
 use embedded_graphics::{
@@ -21,6 +24,11 @@ pub mod content_split_macros;
 pub mod content_split_vm;
 pub mod shaped_text_demo;
 
+use cffi::cffialloc;
+
+#[global_allocator]
+static CFFI_ALLOC: cffialloc = cffialloc;
+
 extern "C" {
     pub fn drawPixel(x: ffi::c_int, y: ffi::c_int, color: ffi::c_uint);
     pub fn fillRect(x: i32, y: i32, w: i32, h: i32, color: u32);
@@ -30,7 +38,6 @@ extern "C" {
     pub fn updataPartial(x: u16, y: u16, w: u16, h: u16);
     pub fn ffi_delay(ms: i32);
     pub fn drawBitmap(x: i16, y: i16, bitmap: *const u8, w: i16, h: i16, color: u16);
-    pub fn println(x: &ffi::CStr);
     pub fn malloc(x: usize) -> *mut u8;
     pub fn free(x: *mut u8);
 }
@@ -111,7 +118,8 @@ pub unsafe fn draw_mandlebrot() {
 }
 
 static mut ZLIB_DECOMP_BUF: [u8; 48000] = [0; 48000];
-pub const TST_IMG: &[u8] = include_bytes!("packed_image_data/o4x4_3.packed");
+// pub const TST_IMG: &[u8] = include_bytes!("packed_image_data/meowmeow.packed");
+// pub const TST_IMG: &[u8] = include_bytes!("packed_image_data/voyager.packed");
 pub const PACKED_IMAGE_ZLIB: &[u8] = include_bytes!("packed_image_data/o4x4_3.packed.zlib");
 
 /// :D
@@ -126,7 +134,7 @@ pub unsafe fn zlib_test() {
         zlib_rs::InflateConfig::default(),
     );
     assert_eq!(rc, zlib_rs::ReturnCode::Ok);
-    drawBitmap(0, 0, ZLIB_DECOMP_BUF.as_ptr(), 800, 480, 0);
+    drawBitmap(0, 0, ZLIB_DECOMP_BUF.as_ptr(), 720, 576, 0);
     update();
 }
 
@@ -199,7 +207,7 @@ unsafe fn shaped_ttf_demo() {
 /// This function should be safe, and is unsafe only due to externed C functions
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_setup() {
-    println!("meow");
+    log::info!("meow");
 
     // initGrayMode();
     fillScreen(WHITE);
@@ -214,4 +222,5 @@ pub unsafe extern "C" fn rust_setup() {
 pub unsafe extern "C" fn rust_loop(fc: ffi::c_int) {
     // grey_demo();
     shaped_ttf_demo();
+    // drawBitmap(0, 0, TST_IMG.as_ptr(), 720, 576, 0xFFFF); update();
 }

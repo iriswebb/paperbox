@@ -6,4 +6,4 @@ ar = "xtensa-esp32s3-elf-ar"
 linker = "ldproxy"
 
 [unstable]
-build-std = ["std", "panic_abort", "core", "alloc"]
+build-std = ["panic_abort", "core", "alloc", "std"]

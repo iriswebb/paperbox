@@ -6,51 +6,22 @@
 
 #![expect(clippy::cast_possible_truncation, reason = "Deferred")]
 
+use alloc::string::String;
+use alloc::sync::Arc;
+use core::alloc::GlobalAlloc;
+use core::sync::atomic::{AtomicUsize, Ordering};
+use core_maths::CoreFloat;
 use embedded_graphics::pixelcolor::{Gray4, Rgb888};
 use embedded_graphics::prelude::*;
 use parley::fontique::{Blob, FontInfoOverride};
 use parley::layout::{Alignment, Glyph, GlyphRun, Layout, PositionedLayoutItem};
 use parley::style::{FontFamily, StyleProperty};
 use parley::{AlignmentOptions, FontContext, LayoutContext, LineHeight};
-use std::alloc::GlobalAlloc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 use swash::scale::image::Content;
 use swash::scale::{Render, ScaleContext, Scaler, Source, StrikeWith};
 use swash::zeno;
 use swash::FontRef;
 use zeno::{Format, Vector};
-
-/// Global atomic counter for tracking total allocated bytes
-pub static BYTES_ALLOCATED: AtomicUsize = AtomicUsize::new(0);
-
-/// A custom global allocator that tracks memory allocations
-pub struct TrackingAllocator;
-
-unsafe impl GlobalAlloc for TrackingAllocator {
-    unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
-        // Get memory from the system allocator
-        let ret = std::alloc::System.alloc(layout);
-
-        // Track the allocation if successful
-        if !ret.is_null() {
-            BYTES_ALLOCATED.fetch_add(layout.size(), Ordering::SeqCst);
-        }
-
-        ret
-    }
-
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: std::alloc::Layout) {
-        // Deallocate using the system allocator
-        std::alloc::System.dealloc(ptr, layout);
-
-        // Subtract from the counter
-        BYTES_ALLOCATED.fetch_sub(layout.size(), Ordering::SeqCst);
-    }
-}
-
-#[global_allocator]
-static TALLOC: TrackingAllocator = TrackingAllocator;
 
 fn alpha_composite(background: Rgb888, foreground: Rgb888, alpha: u8) -> Rgb888 {
     let (r1, g1, b1) = (
@@ -80,13 +51,13 @@ fn inverse(col: Rgb888) -> Rgb888 {
 }
 
 trait ParleyEngine:
-    DrawTarget<Color: From<Rgb888> + Clone + PartialEq + Default + std::fmt::Debug + Into<Rgb888>>
+    DrawTarget<Color: From<Rgb888> + Clone + PartialEq + Default + core::fmt::Debug + Into<Rgb888>>
 {
 }
 
 impl<
         T: DrawTarget<
-            Color: From<Rgb888> + Clone + PartialEq + Default + std::fmt::Debug + Into<Rgb888>,
+            Color: From<Rgb888> + Clone + PartialEq + Default + core::fmt::Debug + Into<Rgb888>,
         >,
     > ParleyEngine for T
 {

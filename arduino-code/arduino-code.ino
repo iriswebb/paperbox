@@ -1,28 +1,201 @@
 #include "driver/spi_master.h"
+#include "esp32-hal-log.h"
+#include "esp32-hal-spi.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "hal/gpio_ll.h"
+#include "io_pin_remap.h"
+#include "pins_arduino.h"
+#include "soc/soc_caps.h"
 #include "soc/spi_reg.h"
-#include <Arduino.h>
-#include <Print.h>
-#include <SPI.h>
-#include <Wire.h>
+#include <stdlib.h>
 #include <pgmspace.h>
 #include <rust_ffi.h>
+/// #
+
+class SPISettings {
+public:
+  SPISettings(uint32_t clock, uint8_t bitOrder, uint8_t dataMode)
+      : _clock(clock), _bitOrder(bitOrder), _dataMode(dataMode) {}
+  uint32_t _clock;
+  uint8_t _bitOrder;
+  uint8_t _dataMode;
+};
+
+class SPIClass {
+private:
+  int8_t _spi_num;
+  spi_t *_spi;
+  bool _use_hw_ss;
+  int8_t _sck;
+  int8_t _miso;
+  int8_t _mosi;
+  int8_t _ss;
+  uint32_t _div;
+  uint32_t _freq;
+  bool _inTransaction;
+  SemaphoreHandle_t paramLock = NULL;
+
+public:
+  SPIClass(uint8_t spi_bus = HSPI);
+  ~SPIClass();
+  bool begin(int8_t sck = -1, int8_t miso = -1, int8_t mosi = -1,
+             int8_t ss = -1);
+  void end();
+  void setHwCs(bool use);
+  void beginTransaction(SPISettings settings);
+  void endTransaction(void);
+};
+
+#if !defined(NO_GLOBAL_INSTANCES) && !defined(NO_GLOBAL_SPI)
+extern SPIClass SPI;
+#endif
+
+#define SPI_PARAM_LOCK()                                                       \
+  do {                                                                         \
+  } while (xSemaphoreTake(paramLock, portMAX_DELAY) != pdPASS)
+#define SPI_PARAM_UNLOCK() xSemaphoreGive(paramLock)
+
+SPIClass::SPIClass(uint8_t spi_bus)
+    : _spi_num(spi_bus), _spi(NULL), _use_hw_ss(false), _sck(-1), _miso(-1),
+      _mosi(-1), _ss(-1), _div(0), _freq(1000000), _inTransaction(false),
+      paramLock(NULL) {
+  if (paramLock == NULL) {
+    paramLock = xSemaphoreCreateMutex();
+    if (paramLock == NULL) {
+      log_e("xSemaphoreCreateMutex failed");
+      return;
+    }
+  }
+}
+
+SPIClass::~SPIClass() {
+  end();
+  if (paramLock != NULL) {
+    vSemaphoreDelete(paramLock);
+    paramLock = NULL;
+  }
+}
+
+bool SPIClass::begin(int8_t sck, int8_t miso, int8_t mosi, int8_t ss) {
+  if (_spi) return true;
+  if (!_div) _div = spiFrequencyToClockDiv(NULL, _freq);
+  _spi = spiStartBus(_spi_num, _div, SPI_MODE0, SPI_MSBFIRST);
+  if (!_spi) {
+    log_e("SPI bus %d start failed.", _spi_num);
+    return false;
+  }
+
+  if (sck == -1 && miso == -1 && mosi == -1 && ss == -1) {
+#if CONFIG_IDF_TARGET_ESP32
+    _sck = (_spi_num == VSPI) ? SCK : 14;
+    _miso = (_spi_num == VSPI) ? MISO : 12;
+    _mosi = (_spi_num == VSPI) ? MOSI : 13;
+    _ss = (_spi_num == VSPI) ? SS : 15;
+#elif CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32S3
+    _sck = (_spi_num == FSPI) ? SCK : -1;
+    _miso = (_spi_num == FSPI) ? MISO : -1;
+    _mosi = (_spi_num == FSPI) ? MOSI : -1;
+    _ss = (_spi_num == FSPI) ? SS : -1;
+#else
+    _sck = SCK;
+    _miso = MISO;
+    _mosi = MOSI;
+    _ss = SS;
+#endif
+  } else {
+    _sck = sck;
+    _miso = miso;
+    _mosi = mosi;
+    _ss = ss;
+  }
+
+  if (!spiAttachSCK(_spi, _sck)) {
+    goto err;
+  }
+  if (_miso >= 0 && !spiAttachMISO(_spi, _miso)) {
+    goto err;
+  }
+  if (_mosi >= 0 && !spiAttachMOSI(_spi, _mosi)) {
+    goto err;
+  }
+  return true;
+
+err:
+  log_e("Attaching pins to SPI failed.");
+  return false;
+}
+
+void SPIClass::end() {
+  if (!_spi) {
+    return;
+  }
+  spiDetachSCK(_spi);
+  spiDetachMISO(_spi);
+  spiDetachMOSI(_spi);
+  setHwCs(false);
+  if (spiGetClockDiv(_spi) != 0) {
+    spiStopBus(_spi);
+  }
+  _spi = NULL;
+}
+
+void SPIClass::setHwCs(bool use) {
+  if (_ss < 0) {
+    return;
+  }
+  if (use && !_use_hw_ss) {
+    spiAttachSS(_spi, 0, _ss);
+    spiSSEnable(_spi);
+  } else if (!use && _use_hw_ss) {
+    spiSSDisable(_spi);
+    spiDetachSS(_spi);
+  }
+  _use_hw_ss = use;
+}
+
+void SPIClass::beginTransaction(SPISettings settings) {
+  SPI_PARAM_LOCK();
+  // check if last freq changed
+  uint32_t cdiv = spiGetClockDiv(_spi);
+  if (_freq != settings._clock || _div != cdiv) {
+    _freq = settings._clock;
+    _div = spiFrequencyToClockDiv(_spi, _freq);
+  }
+  spiTransaction(_spi, _div, settings._dataMode, settings._bitOrder);
+  _inTransaction = true;
+}
+
+void SPIClass::endTransaction() {
+  if (_inTransaction) {
+    _inTransaction = false;
+    spiEndTransaction(_spi);
+    SPI_PARAM_UNLOCK(); // <-- Im not sure should it be here or right after
+                        // spiTransaction()
+  }
+}
+
+#if CONFIG_IDF_TARGET_ESP32
+SPIClass SPI(VSPI);
+#else
+SPIClass SPI(FSPI);
+#endif
+
+/// #
 
 #define TFT_WIDTH 800
 #define TFT_HEIGHT 480
 #define EPD_WIDTH TFT_WIDTH
 #define EPD_HEIGHT TFT_HEIGHT
-#define TFT_SCLK D8
+#define TFT_SCLK 7 // D8
 #define TFT_MISO -1
-#define TFT_MOSI D10
-#define TFT_CS 44     // D7
-#define TFT_DC 10     // D16
-#define TFT_BUSY 4    // D3
-#define TFT_RST 38    // D11
-#define TFT_ENABLE 43 // D6
+#define TFT_MOSI 9 // D10
+#define TFT_CS 44  // D7
+#define TFT_DC 10  // D16
+#define TFT_BUSY 4 // D3
+#define TFT_RST 38 // D11
 
 #define SPI_FREQUENCY 10000000
-#define SPI_READ_FREQUENCY 4000000
 
 #define EPD_WIDTH 800
 #define EPD_HEIGHT 480
@@ -277,19 +450,6 @@ const unsigned char CMD_USER_GRAY[] = {
     }                                                                          \
   } while (0)
 
-#define EPD_INIT_PARTIAL()                                                     \
-  do {                                                                         \
-    writecommand(0x00);                                                        \
-    writedata(0x1F);                                                           \
-    writecommand(0x04);                                                        \
-    delay(100);                                                                \
-    CHECK_BUSY();                                                              \
-    writecommand(0xE0);                                                        \
-    writedata(0x02);                                                           \
-    writecommand(0xE5);                                                        \
-    writedata(0x6E);                                                           \
-  } while (0)
-
 #define EPD_WAKEUP()                                                           \
   do {                                                                         \
     digitalWrite(TFT_RST, LOW);                                                \
@@ -317,7 +477,15 @@ const unsigned char CMD_USER_GRAY[] = {
     digitalWrite(TFT_RST, HIGH);                                               \
     delay(10);                                                                 \
     CHECK_BUSY();                                                              \
-    EPD_INIT_PARTIAL();                                                        \
+    writecommand(0x00);                                                        \
+    writedata(0x1F);                                                           \
+    writecommand(0x04);                                                        \
+    delay(100);                                                                \
+    CHECK_BUSY();                                                              \
+    writecommand(0xE0);                                                        \
+    writedata(0x02);                                                           \
+    writecommand(0xE5);                                                        \
+    writedata(0x6E);                                                           \
   } while (0);
 
 #define EPD_SET_WINDOW(x1, y1, x2, y2)                                         \
@@ -694,8 +862,6 @@ void TFT_eSPI::initFromSleep() {
   {
 
     pinMode(TFT_BUSY, INPUT);
-    pinMode(TFT_ENABLE, OUTPUT);
-    digitalWrite(TFT_ENABLE, HIGH);
     writecommand(0x01); // POWER SETTING
     writedata(0x07);
     writedata(0x07); // VGH=20V,VGL=-20V
@@ -774,8 +940,6 @@ void TFT_eSPI::init() {
   {
 
     pinMode(TFT_BUSY, INPUT);
-    pinMode(TFT_ENABLE, OUTPUT);
-    digitalWrite(TFT_ENABLE, HIGH);
     writecommand(0x01); // POWER SETTING
     writedata(0x07);
     writedata(0x07); // VGH=20V,VGL=-20V
@@ -956,6 +1120,7 @@ void TFT_eSPI::uc8179ReadOtpUserData(uint16_t read_len, uint16_t data_offset,
 }
 
 void TFT_eSPI::uc8179ProbeOtpSupport(void) {
+    Serial.println("meow");
   if (_uc8179_has_checked_otp)
     return;
 
@@ -1457,6 +1622,7 @@ void setup(void) {
   Serial.begin(115200);
   epaper.begin();
   Serial.println("meow");
+  Serial.println(HSPI);
   rust_setup();
 }
 
