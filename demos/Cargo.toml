@@ -7,7 +7,7 @@ edition = "2024"
 embedded-hal = "1.0.0"
 embedded-graphics = "0.8.2"
 log = "0.4"
-xiao-epaper = {path = "../driver"}
+xiao-epaper = {path = "../uc8179"}
 zlib-rs = { version = "0.6.3", default-features = false, features = ["c-allocator"] }
 eg-seven-segment = "0.2.0"
 femtofont = "0.5.0"

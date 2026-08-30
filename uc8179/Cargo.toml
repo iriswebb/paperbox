@@ -1,0 +1,14 @@
+[package]
+edition      = "2024"
+name         = "xiao-epaper"
+rust-version = "1.88"
+version      = "0.1.0"
+
+[lib]
+name = "xiao_epaper"
+path = "./src/lib.rs"
+
+[dependencies]
+embedded-hal = "1.0.0"
+embedded-graphics = "0.8.2"
+log = "0.4"

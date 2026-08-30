@@ -31,5 +31,5 @@ embedded-hal = "1.0"
 embedded-hal-bus = { version = "0.3", features = ["async"] }
 embedded-hal-async = "1.0.0"
 
-xiao-epaper = {path = "../driver"}
+xiao-epaper = {path = "../uc8179"}
 demos = {path = "../demos"}
