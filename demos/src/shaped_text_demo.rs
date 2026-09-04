@@ -6,7 +6,6 @@
 
 #![expect(clippy::cast_possible_truncation, reason = "Deferred")]
 
-use alloc::string::String;
 use alloc::sync::Arc;
 use core_maths::CoreFloat;
 use embedded_graphics::pixelcolor::Rgb888;
@@ -43,29 +42,21 @@ fn alpha_composite(background: Rgb888, foreground: Rgb888, alpha: u8) -> Rgb888 
     )
 }
 
-fn inverse(col: Rgb888) -> Rgb888 {
-    let (r, g, b) = (col.r(), col.g(), col.b());
-    Rgb888::new(Rgb888::MAX_R - r, Rgb888::MAX_G - g, Rgb888::MAX_B - b)
-}
-
 trait ParleyEngine:
-    DrawTarget<Color: From<Rgb888> + Clone + PartialEq + Default + core::fmt::Debug + Into<Rgb888>>
+    DrawTarget<Color: From<Rgb888> + PixelColor + Default + core::fmt::Debug + Into<Rgb888>>
 {
 }
 
-impl<
-    T: DrawTarget<Color: From<Rgb888> + Clone + PartialEq + Default + core::fmt::Debug + Into<Rgb888>>,
-> ParleyEngine for T
+impl<T: DrawTarget<Color: From<Rgb888> + PixelColor + Default + core::fmt::Debug + Into<Rgb888>>>
+    ParleyEngine for T
 {
 }
 
 pub fn draw_shaped_text<D: ParleyEngine>(
     display: &mut D,
-    text: String,
+    text: &str,
     font_data: &'static [u8],
     font_size: f32,
-    display_scale: f32,
-    quantize: bool,
     width: Option<f32>,
     text_color: D::Color,
     aa_color: D::Color,
@@ -73,7 +64,7 @@ pub fn draw_shaped_text<D: ParleyEngine>(
     line_height: f32,
     start: Point,
     alignment: Alignment,
-) {
+) -> Result<(), D::Error> {
     // Create a FontContext, LayoutContext and ScaleContext
     // These are all intended to be constructed rarely (perhaps even once per app (or once per thread))
     // and provide caches and scratch space to avoid allocations
@@ -91,12 +82,12 @@ pub fn draw_shaped_text<D: ParleyEngine>(
     );
 
     let mut layout = {
-        let mut builder = layout_cx.ranged_builder(&mut font_cx, &text, display_scale, quantize);
+        let mut builder = layout_cx.ranged_builder(&mut font_cx, text, 1.0, true);
         builder.push_default(StyleProperty::Brush(text_color));
         builder.push_default(FontFamily::from("MyCustomFont"));
         builder.push_default(LineHeight::FontSizeRelative(line_height));
         builder.push_default(StyleProperty::FontSize(font_size));
-        let layout: Layout<D::Color> = builder.build(&text);
+        let layout: Layout<D::Color> = builder.build(text);
         layout
     };
 
@@ -111,9 +102,11 @@ pub fn draw_shaped_text<D: ParleyEngine>(
             PositionedLayoutItem::GlyphRun(g) => g,
             _ => panic!(),
         }) {
-            render_glyph_run(&mut scale_cx, &glyph_run, display, padding);
+            render_glyph_run(&mut scale_cx, &glyph_run, display, padding, aa_color)?;
         }
     }
+
+    Ok(())
 }
 
 fn render_glyph_run<D: ParleyEngine>(
@@ -121,7 +114,8 @@ fn render_glyph_run<D: ParleyEngine>(
     glyph_run: &GlyphRun<'_, D::Color>,
     img: &mut D,
     padding: u32,
-) {
+    aa_color: D::Color,
+) -> Result<(), D::Error> {
     // Resolve properties of the GlyphRun
     let mut run_x = glyph_run.offset();
     let run_y = glyph_run.baseline();
@@ -153,8 +147,18 @@ fn render_glyph_run<D: ParleyEngine>(
         let glyph_y = run_y + glyph.y + (padding as f32);
         run_x += glyph.advance;
 
-        render_glyph(img, &mut scaler, color.into(), glyph, glyph_x, glyph_y);
+        render_glyph(
+            img,
+            &mut scaler,
+            color.into(),
+            glyph,
+            glyph_x,
+            glyph_y,
+            aa_color,
+        )?;
     }
+
+    Ok(())
 }
 
 fn render_glyph<D: ParleyEngine>(
@@ -164,7 +168,8 @@ fn render_glyph<D: ParleyEngine>(
     glyph: Glyph,
     glyph_x: f32,
     glyph_y: f32,
-) {
+    aa_color: D::Color,
+) -> Result<(), D::Error> {
     // Compute the fractional offset
     // You'll likely want to quantize this in a real renderer
     let offset = Vector::new(glyph_x.fract(), glyph_y.fract());
@@ -194,13 +199,12 @@ fn render_glyph<D: ParleyEngine>(
     match rendered_glyph.content {
         Content::Mask => {
             let mut i = 0;
-            let bc = brush;
             for pixel_y in 0..glyph_height {
                 for pixel_x in 0..glyph_width {
                     let x = glyph_x + pixel_x;
                     let y = glyph_y + pixel_y;
                     let alpha = rendered_glyph.data[i];
-                    let c = alpha_composite(inverse(brush), brush, alpha);
+                    let c = alpha_composite(aa_color.into(), brush, alpha);
                     Pixel(
                         Point {
                             x: x as i32,
@@ -208,10 +212,11 @@ fn render_glyph<D: ParleyEngine>(
                         },
                         c.into(),
                     )
-                    .draw(img);
+                    .draw(img)?;
                     i += 1;
                 }
             }
+            Ok(())
         }
         Content::SubpixelMask => unimplemented!(),
         Content::Color => {
@@ -221,7 +226,7 @@ fn render_glyph<D: ParleyEngine>(
                     let x = glyph_x + pixel_x as u32;
                     let y = glyph_y + pixel_y as u32;
                     let color = alpha_composite(
-                        inverse(brush),
+                        aa_color.into(),
                         Rgb888::new(pixel[0], pixel[1], pixel[2]),
                         pixel[3],
                     );
@@ -232,9 +237,10 @@ fn render_glyph<D: ParleyEngine>(
                         },
                         color.into(),
                     )
-                    .draw(img);
+                    .draw(img)?;
                 }
             }
+            Ok(())
         }
     }
 }

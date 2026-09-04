@@ -123,7 +123,7 @@ where
             rst,
             busy,
             delay,
-            fb: vec![0xFF; 48000],
+            fb: vec![0x00; 48000],
             fb2: Vec::new(),
         }
     }
@@ -219,13 +219,15 @@ where
         ];
 
         self.reset()?;
-        self.cmd_with(command::PowerSetting, &[0x07, 0x07, 0x3f, 0x3f])?;
+        self.cmd_with(command::PowerSetting, &[0x07, 0x07, 0x3f, 0x3f, 0x09])?;
+        // self.cmd_with(command::PLL, &[0x06])?;
+        // self.cmd_with(command::VCOMDCSetting, &[0x16])?;
         self.cmd_with(command::BoosterSoftStart, &[0x17, 0x17, 0x28, 0x17])?;
         self.cmd_with_wait(command::PowerOn)?;
         self.cmd_with(command::PanelSetting, &[0x1f])?;
         self.cmd_with(command::ResolutionSetting, &[0x03, 0x20, 0x01, 0xE0])?;
         self.cmd_with(command::DualSPI, &[0x00])?;
-        self.cmd_with(command::CDI, &[0x29, 0x07])?; // &[0x10, 0x07] ?
+        self.cmd_with(command::CDI, &[0x10, 0x07])?; // &[0x10, 0x07] ?
         self.cmd_with(command::TCON, &[0x22])?;
         self.send_luts(
             &MONOCHROME_VCOM_LUT,
@@ -263,7 +265,7 @@ where
             0x0A, 0x01, 0x10, 0x0A, 0x11, 0x06, 0x07, 0x01, 0x10, 0x02, 0x01, 0x02, 0x01, 0x01,
         ];
 
-        self.fb2.resize(48000, 0xFF);
+        self.fb2.resize(48000, 0x00);
         self.reset()?;
         self.cmd_with(command::PowerSetting, &[0x07, 0x17, 0x3f, 0x3f, 0x07])?;
         self.cmd_with(command::PLL, &[0x06])?;
@@ -272,9 +274,9 @@ where
         self.cmd_with_wait(command::PowerOn)?;
         self.cmd_with(command::PanelSetting, &[0x3f])?;
         self.cmd_with(command::ResolutionSetting, &[0x03, 0x20, 0x01, 0xE0])?;
-        self.cmd_with(command::DualSPI, &[0x00])?;
-        self.cmd_with(command::CDI, &[0x29, 0x07])?; // &[0x10, 0x07] ?
-        self.cmd_with(command::TCON, &[0x22])?;
+        // self.cmd_with(command::DualSPI, &[0x00])?;
+        self.cmd_with(command::CDI, &[0x10, 0x07])?; // &[0x10, 0x07] ?
+        // self.cmd_with(command::TCON, &[0x22])?;
         self.send_luts(
             &GRAY_VCOM_LUT,
             &GRAY_W2W_LUT,
@@ -291,10 +293,10 @@ where
     }
 
     pub fn clear_white(&mut self) {
-        self.fb.fill(0xFF);
+        self.fb.fill(0x00);
 
         if !self.fb2.is_empty() {
-            self.fb2.fill(0xFF);
+            self.fb2.fill(0x00);
         }
     }
 
@@ -375,7 +377,7 @@ where
             &LUT_PARTIAL_WB,
             &LUT_PARTIAL_BB,
         )?;
-        self.cmd_with(command::LutBorder, &LUT_PARTIAL_BD)
+        self.cmd_with_data_wait(command::LutBorder, &LUT_PARTIAL_BD)
     }
 
     // uses register LUTs with a partial waveform — only changed pixels
@@ -396,8 +398,7 @@ where
         self.cmd_with(command::PartialWindow, le_seq.as_flattened())?;
         self.data(&[0x01])?;
 
-        self.cmd_with_wait(command::DisplayRefresh)?;
-        self.wait_busy(3000)
+        self.cmd_with_wait(command::DisplayRefresh)
     }
 
     fn set_pixel(&mut self, x: u32, y: u32, black: bool) {

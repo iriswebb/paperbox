@@ -10,7 +10,7 @@ path = "./src/bin/main.rs"
 
 [dependencies]
 esp-hal = { version = "1.1.0", default-features = true, features = ["esp32s3", "requires-unstable", "unstable"] }
-esp-rtos = { version = "0.3.0", features = ["esp32s3", "embassy", "esp-alloc"] }
+esp-rtos = { version = "0.3.0", features = ["esp32s3", "embassy", "esp-alloc", "esp-radio"] }
 esp-alloc = { version = "0.10.0", features = ["nightly"] }
 esp-println = { version = "0.17.0", features = ["esp32s3", "log-04"] }
 esp-backtrace = { version = "0.19.0", features = ["esp32s3", "panic-handler", "println"] }
@@ -31,5 +31,19 @@ embedded-hal = "1.0"
 embedded-hal-bus = { version = "0.3", features = ["async"] }
 embedded-hal-async = "1.0.0"
 
+# networking
+embassy-net = { version = "0.9.0", features = [
+    "dhcpv4",
+    "medium-ethernet",
+    "udp",
+    "dns",
+] }
+sntpc = { version = "0.11", default-features = false }
+sntpc-net-embassy = { version = "0.11", default-features = false, features = ["log"] }
+jiff = { version = "0.2.10", default-features = false, features = ["static"] }
+
+# demos
 xiao-epaper = {path = "../uc8179"}
 demos = {path = "../demos"}
+esp-radio = {version = "0.18.0", features = ["wifi", "esp32s3", "esp-alloc", "log-04"] }
+sntpc-time-embassy = "0.6.0"

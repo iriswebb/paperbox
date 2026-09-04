@@ -1,14 +1,19 @@
 #![no_std]
+#![allow(clippy::type_complexity)]
+#![feature(associated_type_defaults)]
 
 extern crate alloc;
 
+use alloc::{string::String, sync::Arc};
 use core_maths::CoreFloat;
 use embedded_graphics::{
     geometry::Point,
     image::ImageRaw,
-    pixelcolor::{BinaryColor, Gray2},
+    mono_font::{MonoTextStyle, ascii::FONT_10X20},
+    pixelcolor::{BinaryColor, Gray2, Gray8},
     prelude::*,
     primitives::{Circle, PrimitiveStyleBuilder},
+    text::Text,
 };
 use embedded_hal::{
     delay::DelayNs,
@@ -17,10 +22,11 @@ use embedded_hal::{
 };
 use xiao_epaper::{GreyUc8179, Uc8179};
 
+use crate::content_split::{Demo, FourSizes, Split, Widget};
+
 pub mod badapple;
 pub mod content_split;
 pub mod content_split_macros;
-pub mod content_split_vm;
 pub mod shaped_text_demo;
 
 /// Prevents every demo from having one million generic arguments
@@ -32,6 +38,8 @@ pub trait Driver {
     type RST: OutputPin<Error = Self::E>;
     type BUSY: InputPin<Error = Self::E>;
     type Delay: DelayNs;
+
+    type FINAL = Uc8179<Self::SPI, Self::CS, Self::DC, Self::RST, Self::BUSY, Self::Delay>;
 
     fn inner_mut(
         &mut self,
@@ -133,16 +141,57 @@ pub fn badapple_demo<D: Driver>(driver: &mut D, fc: usize) {
         .draw(driver);
 }
 
+#[derive(Debug, Clone)]
+pub struct PlainTextDemo(String);
+
+impl<D: DrawTarget<Color: From<Gray8>>, C: Clone> Demo<D, C> for PlainTextDemo {
+    #[allow(unused_results)]
+    fn render(&self, t: &mut D, r: embedded_graphics::primitives::Rectangle, _context: C) {
+        // Fill with white
+        r.into_styled(
+            PrimitiveStyleBuilder::new()
+                .fill_color(Gray8::WHITE.into())
+                .build(),
+        )
+        .draw(t);
+
+        // Black Text
+        Text::with_alignment(
+            &self.0,
+            r.center(),
+            MonoTextStyle::new(&FONT_10X20, Gray8::BLACK.into()),
+            embedded_graphics::text::Alignment::Center,
+        )
+        .draw(t);
+    }
+}
+
 /// # Safety
 ///
 /// This function should be safe, and is unsafe only due to externed C functions
 pub fn contentdisplay_demo<D: Driver>(driver: &mut D) {
     let disp = driver.inner_mut();
-    use alloc::string::ToString;
-    use content_split::ContentDisplayDriver;
-    let mut eg = content_split::EmbeddedGraphicsContentRenderer(disp);
-    let widget = hsplit!([text!("meow"), vsplit!([text!("mrrp"), text!("mrrow"),])]);
-    eg.render(&widget, 0, 0, 800, 480);
+
+    let w = from_demo!(PlainTextDemo(String::from("mrreow")));
+
+    let s = Widget {
+        content: content_split::WidgetType::Split(Split {
+            is_horiz: true,
+            widgets: [w, from_demo!(PlainTextDemo(String::from("mrrp")))].into(),
+            ratios: [3, 2].into(),
+        }),
+        padding: FourSizes(0, 0, 0, 0),
+    };
+
+    // let widget = hsplit!([
+    //     from_demo!(Arc::new(PlainTextDemo(String::from("meow")))),
+    //     vsplit!([
+    //         from_demo!(Arc::new(PlainTextDemo(String::from("meow")))),
+    //         from_demo!(Arc::new(PlainTextDemo(String::from("meow")))),
+    //     ])
+    // ]);
+
+    content_split::render(disp, &s, disp.bounding_box(), ());
 }
 
 pub fn basegrey_demo<D: Driver>(driver: &mut D) {
@@ -182,20 +231,17 @@ pub fn femtofont_demo<D: Driver>(driver: &mut D) {
 }
 
 pub fn parley_demo<D: Driver>(driver: &mut D) {
-    use alloc::string::String;
     let driver = driver.inner_mut();
     use embedded_graphics::pixelcolor::BinaryColor;
 
     shaped_text_demo::draw_shaped_text(
         driver,
-        String::from("Shaped Embedded Graphics\n\nالرسومات المدمجة"),
+        "Shaped Embedded Graphics\n\nالرسومات المدمجة",
         include_bytes!("fonts/Rubik-Bold.ttf"),
         64.0,
-        1.0,
-        true,
         Some(790.0),
-        BinaryColor::On,
         BinaryColor::Off,
+        BinaryColor::On,
         30,
         1.3,
         Point::zero(),
@@ -204,17 +250,14 @@ pub fn parley_demo<D: Driver>(driver: &mut D) {
 }
 
 pub fn parley_grey_demo<D: Driver>(driver: &mut D) {
-    use alloc::string::String;
     let driver = driver.inner_mut();
     let mut gray = GreyUc8179(driver);
 
     shaped_text_demo::draw_shaped_text(
         &mut gray,
-        String::from("Shaped Embedded Graphics\n\nالرسومات المدمجة"),
+        "Shaped Embedded Graphics\n\nالرسومات المدمجة",
         include_bytes!("fonts/Rubik-Bold.ttf"),
         64.0,
-        1.0,
-        true,
         Some(790.0),
         Gray2::BLACK,
         Gray2::WHITE,
