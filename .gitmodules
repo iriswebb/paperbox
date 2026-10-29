@@ -1,0 +1,3 @@
+[submodule "embedded-badapple"]
+	path = embedded-badapple
+	url = https://github.com/iriswebb/embedded-badapple
