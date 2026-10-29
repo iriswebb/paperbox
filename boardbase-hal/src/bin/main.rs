@@ -107,8 +107,8 @@ async fn net_task(mut runner: Runner<'static, Interface<'static>>) {
     runner.run().await
 }
 
-const SSID: &str = "MiWiFi";
-const PASSWORD: &str = "betterbread936";
+const SSID: &str = "wifi";
+const PASSWORD: &str = "wifi password";
 const TIMEZONE: jiff::tz::TimeZone = jiff::tz::get!("America/Chicago");
 
 #[allow(clippy::large_stack_frames)]
