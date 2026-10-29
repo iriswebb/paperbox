@@ -4,16 +4,18 @@
 
 extern crate alloc;
 
-use alloc::{string::String, sync::Arc};
+use core::num::NonZeroU16;
+
+use alloc::string::String;
 use core_maths::CoreFloat;
 use embedded_graphics::{
     geometry::Point,
     image::ImageRaw,
     mono_font::{MonoTextStyle, ascii::FONT_10X20},
-    pixelcolor::{BinaryColor, Gray2, Gray8},
+    pixelcolor::{BinaryColor, Gray2},
     prelude::*,
-    primitives::{Circle, PrimitiveStyleBuilder},
-    text::Text,
+    primitives::{Circle, CornerRadii, PrimitiveStyle, PrimitiveStyleBuilder, RoundedRectangle},
+    text::{Text, renderer::TextRenderer},
 };
 use embedded_hal::{
     delay::DelayNs,
@@ -22,11 +24,9 @@ use embedded_hal::{
 };
 use xiao_epaper::{GreyUc8179, Uc8179};
 
-use crate::content_split::{Demo, FourSizes, Split, Widget};
+use embedded_badapple::DrawInto;
 
 pub mod badapple;
-pub mod content_split;
-pub mod content_split_macros;
 pub mod shaped_text_demo;
 
 /// Prevents every demo from having one million generic arguments
@@ -142,56 +142,95 @@ pub fn badapple_demo<D: Driver>(driver: &mut D, fc: usize) {
 }
 
 #[derive(Debug, Clone)]
-pub struct PlainTextDemo(String);
+pub struct PlainTextDemo<C: PixelColor, T: TextRenderer<Color = C>> {
+    pub text: String,
+    pub background: Background<C>,
+    pub text_style: T,
+}
 
-impl<D: DrawTarget<Color: From<Gray8>>, C: Clone> Demo<D, C> for PlainTextDemo {
-    #[allow(unused_results)]
-    fn render(&self, t: &mut D, r: embedded_graphics::primitives::Rectangle, _context: C) {
-        // Fill with white
-        r.into_styled(
-            PrimitiveStyleBuilder::new()
-                .fill_color(Gray8::WHITE.into())
-                .build(),
-        )
-        .draw(t);
+#[derive(Debug, Clone)]
+pub struct Background<C: PixelColor> {
+    style: PrimitiveStyle<C>,
+    radii: Option<CornerRadii>,
+}
 
-        // Black Text
+impl<C: PixelColor, T: TextRenderer<Color = C> + Clone, D: DrawTarget<Color = C>> DrawInto<D>
+    for PlainTextDemo<C, T>
+{
+    fn draw_into(
+        &self,
+        t: &mut D,
+        r: embedded_graphics::primitives::Rectangle,
+    ) -> Result<(), D::Error> {
+        if let Some(rad) = self.background.radii {
+            RoundedRectangle::new(r, rad)
+                .into_styled(self.background.style)
+                .draw(t)?;
+        } else {
+            r.into_styled(self.background.style).draw(t)?;
+        }
+
+        #[allow(unused_must_use)]
         Text::with_alignment(
-            &self.0,
+            &self.text,
             r.center(),
-            MonoTextStyle::new(&FONT_10X20, Gray8::BLACK.into()),
+            self.text_style.clone(),
             embedded_graphics::text::Alignment::Center,
         )
         .draw(t);
+
+        Ok(())
     }
 }
 
 /// # Safety
 ///
 /// This function should be safe, and is unsafe only due to externed C functions
-pub fn contentdisplay_demo<D: Driver>(driver: &mut D) {
+pub fn contentdisplay_demo<D: Driver>(driver: &mut D)
+where
+    <D as Driver>::Delay: 'static,
+    <D as Driver>::BUSY: 'static,
+    <D as Driver>::RST: 'static,
+    <D as Driver>::CS: 'static,
+    <D as Driver>::DC: 'static,
+    <D as Driver>::SPI: 'static,
+{
     let disp = driver.inner_mut();
+    use alloc::boxed::Box;
+    use alloc::vec;
+    use embedded_badapple::demos::split::Split;
 
-    let w = from_demo!(PlainTextDemo(String::from("mrreow")));
-
-    let s = Widget {
-        content: content_split::WidgetType::Split(Split {
-            is_horiz: true,
-            widgets: [w, from_demo!(PlainTextDemo(String::from("mrrp")))].into(),
-            ratios: [3, 2].into(),
-        }),
-        padding: FourSizes(0, 0, 0, 0),
+    let make_text = |s| {
+        Box::new(PlainTextDemo {
+            text: String::from(s),
+            background: Background {
+                style: PrimitiveStyleBuilder::new()
+                    .fill_color(BinaryColor::On)
+                    .build(),
+                radii: None,
+            },
+            text_style: MonoTextStyle::new(&FONT_10X20, BinaryColor::Off),
+        })
     };
 
-    // let widget = hsplit!([
-    //     from_demo!(Arc::new(PlainTextDemo(String::from("meow")))),
-    //     vsplit!([
-    //         from_demo!(Arc::new(PlainTextDemo(String::from("meow")))),
-    //         from_demo!(Arc::new(PlainTextDemo(String::from("meow")))),
-    //     ])
-    // ]);
+    let w = make_text("meow");
+    let v = Split {
+        is_horiz: false,
+        widgets: vec![
+            (NonZeroU16::MIN, make_text("I'm a cat")),
+            (NonZeroU16::MIN, make_text("meow")),
+        ],
+    };
 
-    content_split::render(disp, &s, disp.bounding_box(), ());
+    let s = Split {
+        is_horiz: true,
+        widgets: vec![
+            (NonZeroU16::new(3).unwrap(), Box::new(v)),
+            (NonZeroU16::new(2).unwrap(), make_text("mrrp")),
+        ],
+    };
+
+    s.draw_into(disp, disp.bounding_box());
 }
 
 pub fn basegrey_demo<D: Driver>(driver: &mut D) {

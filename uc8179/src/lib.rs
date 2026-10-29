@@ -202,6 +202,7 @@ where
     // bb_epaper epd75_init_sequence_full: sent before every refresh.
     //   PWR → PON → BUSY_WAIT → PSR → TRES → 0x15 → CDI → TCON
     pub fn init(&mut self) -> Result<(), Error<SPI::Error, CS::Error>> {
+        self.fb2 = Vec::new();
         pub const MONOCRHOME_BLACK_LUT: [u8; 42] = [
             0xAA, 0x06, 0x0C, 0x17, 0x02, 0x01, 0x15, 0x02, 0x1C, 0x02, 0x0D, 0x01, 0x40, 0x02,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -429,15 +430,15 @@ where
         };
 
         if new {
-            self.fb[idx] &= !mask;
-        } else {
             self.fb[idx] |= mask;
+        } else {
+            self.fb[idx] &= !mask;
         }
 
         if old {
-            self.fb2[idx] &= !mask;
-        } else {
             self.fb2[idx] |= mask;
+        } else {
+            self.fb2[idx] &= !mask;
         }
     }
 }

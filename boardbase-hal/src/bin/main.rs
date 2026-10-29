@@ -9,8 +9,16 @@
 #![deny(clippy::large_stack_frames)]
 #![allow(unused_imports)]
 
+use core_maths::*;
 use embassy_executor::Spawner;
+use embedded_graphics::image::{Image, ImageRaw};
+use embedded_graphics::mono_font::MonoTextStyle;
+use embedded_graphics::mono_font::iso_8859_5::FONT_10X20;
+use embedded_graphics::pixelcolor::{BinaryColor, Gray2, Gray8};
 use embedded_graphics::prelude::*;
+use embedded_graphics::primitives::Rectangle;
+use embedded_graphics::text::{Alignment, Text};
+use embedded_graphics::{image::GetPixel, pixelcolor::Rgb888};
 use esp_backtrace as _;
 use esp_hal::spi::master::Spi;
 use esp_hal::{clock::CpuClock, ram, rng::Rng, rtc_cntl::Rtc, timer::timg::TimerGroup};
@@ -24,6 +32,7 @@ use esp_println::println;
 use log::error;
 use xiao_epaper::{GreyUc8179, Uc8179};
 
+use core::f32;
 use core::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use embassy_net::{
@@ -175,7 +184,7 @@ async fn main(spawner: Spawner) -> ! {
             );
         }
         Err(e) => {
-            error!("Wifi is unavailable/bonkers: {}", e)
+            error!("Wifi is unavailable/bonkers: {}, this will effect NTP", e)
         }
     }
 
@@ -228,6 +237,108 @@ async fn main(spawner: Spawner) -> ! {
     display.clear_white();
     display.flush().unwrap();
     delay.delay_millis(1000);
+    /// Generates a slice of a crecent at a phase angle
+    ///
+    /// Loose adaptation from phoon's source code at <https://www.acme.com/software/phoon/>
+    pub fn cs(phaseangle: f64, line: usize, r: f64, x: usize) -> bool {
+        let mcap = -(phaseangle.cos());
+
+        // Compute Edges of Slice
+        let y = (line as f64) + 0.5 - r;
+        let mut xright = r * (1.0 - (y * y) / (r * r)).sqrt();
+        let mut xleft = -xright;
+
+        if (0.0..core::f64::consts::PI).contains(&phaseangle) {
+            xleft *= mcap;
+        } else {
+            xright *= mcap;
+        }
+
+        let colleft = ((r + 0.5) as isize) + ((xleft + 0.5) as isize);
+        let colright = ((r + 0.5) as isize) + ((xright + 0.5) as isize);
+        let x = x as isize;
+
+        x >= colleft && x <= colright
+    }
+
+    display.sleep().unwrap();
+    display.init_gray().unwrap();
+    GreyUc8179(&mut display).clear(Gray2::BLACK);
+
+    let i = ImageRaw::<Gray8>::new(include_bytes!("img/moon.raw"), 480);
+
+    /// Determines if a point is illuminated in the crescent at a given phase angle
+    pub fn crecent_slice(width: u32, height: u32, phase: f32, x: u32, y: u32) -> bool {
+        cs(phase as f64, y as usize, 240.0, x as usize)
+    }
+
+    // Adapted from "moontool.c" by John Walker: See http://www.fourmilab.ch/moontool/
+    fn moonphase(ud: f64) -> f64 {
+        let eccent = 0.016718; // Eccentricity of Earth's orbit
+        let elonge = 278.833540; // Ecliptic longitude of the Sun at epoch 1980.0
+        let elongp = 282.596403; // Ecliptic longitude of the Sun at perigee
+        let torad = core::f64::consts::PI / 180.0;
+        let fixangle = |a| ((a % 360.0) + 360.0) % 360.0;
+        // Calculation of the Sun's position
+        let day = (ud / 86400.0 + 2440587.5) - 2444238.5; // Date within epoch
+        let M = torad * fixangle(((360.0 / 365.2422) * day) + elonge - elongp); // Convert from perigee co-ordinates to epoch 1980.0
+        // Solve equation of Kepler
+        let mut e = M;
+        let mut delta;
+        delta = e - eccent * e.sin() - M;
+        e = e - delta / (1.0 - eccent * e.cos());
+        while delta.abs() > 1E-6 {
+            delta = e - eccent * e.sin() - M;
+            e = e - delta / (1.0 - eccent * e.cos());
+        }
+        let mut ec = e;
+        ec = 2.0 * (((1.0 + eccent) / (1.0 - eccent)).sqrt() * (ec / 2.0).tan()).atan(); //  True anomaly
+        let lambdasun = fixangle(((ec) * (180.0 / core::f64::consts::PI)) + elongp); // Sun's geocentric ecliptic longitude
+        let ml = fixangle(13.1763966 * day + 64.975464); // Moon's mean lonigitude at the epoch
+        let MM = fixangle(ml - 0.1114041 * day - 349.383063); // 349:  Mean longitude of the perigee at the epoch, Moon's mean anomaly
+        let Ev = 1.2739 * (torad * (2.0 * (ml - lambdasun) - MM)).sin(); // Evection
+        let Ae = 0.1858 * M.sin(); // Annual equation
+        let MmP = torad * (MM + Ev - Ae - (0.37 * M.sin())); // Corrected anomaly
+        let lP = ml + Ev + (6.2886 * MmP.sin() - Ae + (0.214 * (2.0 * MmP).sin())); // Corrected longitude
+        let lPP = lP + (0.6583 * (torad * (2.0 * (lP - lambdasun))).sin()); // True longitude
+        let MoonAge = lPP - lambdasun; // Age of the Moon in degrees
+        return MoonAge * torad;
+    }
+
+    rtc.set_current_time_us(1791043734_000_000);
+
+    let phaseangle = moonphase(
+        jiff::Timestamp::from_microsecond(rtc.current_time_us() as i64)
+            .unwrap()
+            .as_second() as f64,
+    )
+    .rem_euclid(core::f64::consts::TAU);
+    println!("{}", phaseangle);
+
+    Text::with_alignment(
+        "Last Quarter (47.6%)\nSaturday, October 3, 2026",
+        Point::new(640, 240),
+        MonoTextStyle::new(&FONT_10X20, Gray2::WHITE),
+        Alignment::Center,
+    )
+    .draw(&mut GreyUc8179(&mut display));
+
+    for p in Rectangle::new(Point::new(0, 0), Size::new(480, 479)).points() {
+        if crecent_slice(480, 480, phaseangle as f32, p.x as u32, p.y as u32) {
+            Pixel(p, i.pixel(p).unwrap().into()).draw(&mut GreyUc8179(&mut display));
+            // Pixel(p, Gray2::WHITE).draw(&mut GreyUc8179(&mut display));
+        }
+    }
+
+    println!("f");
+
+    display.flush().unwrap();
+    delay.delay_millis(1000);
+
+    display.sleep().unwrap();
+    display.init().unwrap();
+    display.clear_white();
+
     demos::contentdisplay_demo(&mut display);
     display.flush().unwrap();
     delay.delay_millis(1000);
